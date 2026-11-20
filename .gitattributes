@@ -1,0 +1,5 @@
+# Shell and SQL scripts run inside Linux containers: force LF line endings
+# so a Windows checkout (core.autocrlf) can't break them with CRLF.
+*.sh  text eol=lf
+*.sql text eol=lf
+*.yml text eol=lf

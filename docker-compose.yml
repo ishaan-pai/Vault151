@@ -1,0 +1,25 @@
+# Local development stack. The same file is the base for the EC2 deployment.
+# Values come from .env (copy .env.example to .env first).
+services:
+  db:
+    image: gvenzl/oracle-free:23-slim
+    container_name: cardshop-db
+    environment:
+      ORACLE_PASSWORD: ${ORACLE_PASSWORD}     # SYS/SYSTEM admin password
+      APP_USER: ${APP_USER}                   # app schema owner, created on first boot
+      APP_USER_PASSWORD: ${APP_USER_PASSWORD}
+    ports:
+      - "${DB_PORT:-1521}:1521"
+    volumes:
+      - oracle-data:/opt/oracle/oradata                    # DB files persist across restarts
+      - ./database:/opt/cardshop/database:ro               # schema/ and seed/ scripts
+      - ./database/init:/container-entrypoint-initdb.d:ro  # first-boot loader
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+volumes:
+  oracle-data:
