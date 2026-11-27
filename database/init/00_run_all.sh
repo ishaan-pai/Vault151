@@ -6,7 +6,9 @@
 #
 # To re-run from scratch:  docker compose down -v && docker compose up -d db
 
-DB_DIR=/opt/cardshop/database
+# Where the schema and seed files are. Compose mounts them at the default;
+# CI copies them somewhere the unprivileged oracle user can reach instead.
+DB_DIR="${DB_DIR:-/opt/cardshop/database}"
 CONNECT="${APP_USER}/${APP_USER_PASSWORD}@//localhost/FREEPDB1"
 
 run_sql_file() {

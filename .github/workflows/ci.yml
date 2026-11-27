@@ -83,12 +83,14 @@ jobs:
           ORACLE: ${{ job.services.oracle.id }}
         run: |
           set -euo pipefail
-          docker exec "$ORACLE" mkdir -p /opt/cardshop
-          docker cp database "$ORACLE:/opt/cardshop/database"
+          # The image runs as the unprivileged "oracle" user, so /opt is not
+          # writable. /tmp is, and DB_DIR tells the loader where to look.
+          docker cp database "$ORACLE:/tmp/database"
           output=$(docker exec \
+            -e DB_DIR=/tmp/database \
             -e APP_USER=cardshop \
             -e APP_USER_PASSWORD=cicardshop123 \
-            "$ORACLE" bash /opt/cardshop/database/init/00_run_all.sh)
+            "$ORACLE" bash /tmp/database/init/00_run_all.sh)
           echo "$output"
           # The loader reports failure in its output but still exits 0, so check the
           # text or a broken schema would sail through as a green build.
