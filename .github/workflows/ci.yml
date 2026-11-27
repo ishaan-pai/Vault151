@@ -1,0 +1,149 @@
+name: CI
+
+# Every push and every pull request. The repository is public, so GitHub Actions
+# minutes are free and there is no reason to be frugal about when this runs.
+on:
+  push:
+  pull_request:
+
+# A second push to the same branch cancels the first: no point finishing a run for
+# code that has already been replaced.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+
+    # Oracle runs beside the job for the integration tests. It is the slowest part of
+    # CI by a distance - a couple of minutes just to come up - but it is also the only
+    # thing that can catch a mistyped column or a bind that never binds, which is
+    # exactly the class of bug this project most needs caught.
+    services:
+      oracle:
+        image: gvenzl/oracle-free:23-slim
+        env:
+          ORACLE_PASSWORD: ci-admin-password
+          APP_USER: cardshop
+          APP_USER_PASSWORD: cicardshop123
+        ports:
+          - 1521:1521
+        options: >-
+          --health-cmd healthcheck.sh
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 30
+          --health-start-period 60s
+
+    env:
+      APP_USER: cardshop
+      APP_USER_PASSWORD: cicardshop123
+      DB_HOST: localhost
+      DB_PORT: 1521
+      DB_SERVICE: FREEPDB1
+      # Long enough to satisfy the startup check; not a real secret.
+      ADMIN_JWT_SECRET: ci-signing-secret-that-is-long-enough-32
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        working-directory: backend
+        run: uv sync --frozen
+
+      - name: Lint
+        working-directory: backend
+        run: uv run ruff check .
+
+      - name: Check formatting
+        working-directory: backend
+        run: uv run ruff format --check .
+
+      - name: Type check
+        working-directory: backend
+        run: uv run mypy app tests
+
+      - name: Unit tests
+        working-directory: backend
+        run: uv run pytest -v
+
+      # A healthy service container is an empty database: the image only runs the
+      # first-boot loader through its own entrypoint, which a service container does
+      # not use. So CI runs the very same script by hand, which has the happy side
+      # effect of testing the loader rather than a CI-only copy of it.
+      - name: Load schema and seed data
+        env:
+          ORACLE: ${{ job.services.oracle.id }}
+        run: |
+          set -euo pipefail
+          docker exec "$ORACLE" mkdir -p /opt/cardshop
+          docker cp database "$ORACLE:/opt/cardshop/database"
+          output=$(docker exec \
+            -e APP_USER=cardshop \
+            -e APP_USER_PASSWORD=cicardshop123 \
+            "$ORACLE" bash /opt/cardshop/database/init/00_run_all.sh)
+          echo "$output"
+          # The loader reports failure in its output but still exits 0, so check the
+          # text or a broken schema would sail through as a green build.
+          echo "$output" | grep -q '\[cardshop-init\] SUCCESS'
+
+      - name: Integration tests
+        working-directory: backend
+        run: uv run pytest -m integration -v
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Type check
+        working-directory: frontend
+        run: npm run typecheck
+
+      - name: Tests
+        working-directory: frontend
+        run: npm test
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+
+  images:
+    name: Docker images
+    runs-on: ubuntu-latest
+    # Only worth building images once the code they contain is known to be sound.
+    needs: [backend, frontend]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Built, not pushed. Nothing is deployed from CI yet, so a registry would be
+      # somewhere to put images nobody pulls. This still proves both Dockerfiles work.
+      - name: Build backend image
+        run: docker build -t cardshop-backend:ci ./backend
+
+      - name: Build frontend image
+        run: docker build -t cardshop-frontend:ci ./frontend

@@ -1,0 +1,41 @@
+@import "tailwindcss";
+
+/* Collector's binder: a dark, cool ground so the cards carry all the colour, with
+   slab-like frames around each one. Palette fixed by the seller; brass is the one
+   addition, used only for prices and the active filter state. */
+@theme {
+  --color-canvas: #111822;
+  --color-surface: #1c2430;
+  --color-muted: #8c9ba5;
+
+  /* Derived from the three above rather than invented: a lifted surface for hover,
+     a divider that reads as a seam, and text that clears 4.5:1 on the canvas. */
+  --color-surface-raised: #26303d;
+  --color-seam: #2a3540;
+  --color-ink: #e8edf2;
+  --color-brass: #c9a227;
+  /* Destructive actions only - disable and delete. Muted rather than alarming,
+     because disabling a card is routine, but still unmistakably not brass. */
+  --color-danger: #e0797f;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+html {
+  background-color: var(--color-canvas);
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Keyboard focus must stay visible against the dark ground. */
+:focus-visible {
+  outline: 2px solid var(--color-brass);
+  outline-offset: 2px;
+}

@@ -21,5 +21,49 @@ services:
       retries: 30
       start_period: 60s
 
+  backend:
+    build: ./backend
+    container_name: cardshop-backend
+    # env_file passes values through literally. The admin password hash contains $
+    # characters, which compose would otherwise read as variable substitutions and
+    # mangle - that is what the "argon2id variable is not set" warnings were.
+    env_file:
+      - path: .env
+        format: raw
+    environment:
+      # Overrides only. Everything else comes from .env, or from the defaults in
+      # app/config.py when absent.
+      DB_HOST: db                             # service name on the compose network,
+      DB_PORT: 1521                           # and the container port, not DB_PORT
+      MEDIA_DIR: /srv/media
+    volumes:
+      - card-media:/srv/media                 # photos the seller uploads
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy            # wait for Oracle, not just the container
+    healthcheck:
+      # No curl in the slim image, so ask Python; urlopen raises on a 503.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  frontend:
+    build: ./frontend
+    container_name: cardshop-frontend
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    volumes:
+      - card-media:/usr/share/nginx/html/media:ro   # nginx serves them directly
+    # nginx serves the built static site and proxies /api to the backend, so the
+    # browser only ever talks to one origin. Same shape production will keep.
+
 volumes:
   oracle-data:
+  card-media:
